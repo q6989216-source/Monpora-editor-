@@ -1,0 +1,29 @@
+name: monpora_editor
+description: Monpora Editor - starter project
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^5.2.4
+  path_provider: ^2.0.15
+  permission_handler: ^10.4.0
+  ffmpeg_kit_flutter_full_gpl: ^5.1.0
+  uuid: ^3.0.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/music/
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
