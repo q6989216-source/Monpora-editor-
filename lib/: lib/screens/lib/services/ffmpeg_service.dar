@@ -1,0 +1,85 @@
+import 'dart:io';
+import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
+
+class FFmpegService {
+  final _uuid = const Uuid();
+
+  Future<String> _outPath(String name) async {
+    final dir = await getApplicationDocumentsDirectory();
+    return '${dir.path}/$name.mp4';
+  }
+
+  Future<String> trim(File input, double start, double end) async {
+    final out = await _outPath('trim_${_uuid.v4()}');
+    final startStr = start.toStringAsFixed(2);
+    final dur = (end - start).toStringAsFixed(2);
+    final cmd = "-i '${input.path}' -ss $startStr -t $dur -c copy '$out'";
+    final session = await FFmpegKit.execute(cmd);
+    final rc = await session.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) return out;
+    final cmd2 = "-i '${input.path}' -ss $startStr -t $dur -c:v libx264 -c:a aac '$out'";
+    final s2 = await FFmpegKit.execute(cmd2);
+    final rc2 = await s2.getReturnCode();
+    if (ReturnCode.isSuccess(rc2)) return out;
+    throw Exception('Trim failed');
+  }
+
+  Future<String> merge(File a, File b) async {
+    final out = await _outPath('merge_${_uuid.v4()}');
+    final dir = await getApplicationDocumentsDirectory();
+    final list = File('${dir.path}/list_${_uuid.v4()}.txt');
+    await list.writeAsString("file '${a.path.replaceAll("'", "\\'")}'\nfile '${b.path.replaceAll("'", "\\'")}'\n");
+    final cmd = "-f concat -safe 0 -i '${list.path}' -c copy '$out'";
+    final s = await FFmpegKit.execute(cmd);
+    final rc = await s.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) return out;
+    final cmd2 = "-i '${a.path}' -i '${b.path}' -filter_complex '[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]' -map '[outv]' -map '[outa]' '$out'";
+    final s2 = await FFmpegKit.execute(cmd2);
+    final rc2 = await s2.getReturnCode();
+    if (ReturnCode.isSuccess(rc2)) return out;
+    throw Exception('Merge failed');
+  }
+
+  Future<String> addTextOverlay(File input, String text) async {
+    final out = await _outPath('text_${_uuid.v4()}');
+    final escaped = text.replaceAll("'", "\\'");
+    final cmd = "-i '${input.path}' -vf drawtext=text='$escaped':fontfile=/system/fonts/Roboto-Regular.ttf:fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2 -codec:a copy '$out'";
+    final s = await FFmpegKit.execute(cmd);
+    final rc = await s.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) return out;
+    throw Exception('Text overlay failed');
+  }
+
+  Future<String> addBackgroundMusic(File video, File music, double volume) async {
+    final out = await _outPath('music_${_uuid.v4()}');
+    final cmd = "-i '${video.path}' -i '${music.path}' -filter_complex '[1:a]volume=${volume.toStringAsFixed(2)}[m];[0:a][m]amix=inputs=2:duration=shortest' -c:v copy -c:a aac -b:a 192k '$out'";
+    final s = await FFmpegKit.execute(cmd);
+    final rc = await s.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) return out;
+    throw Exception('Music mix failed');
+  }
+
+  Future<String> changeSpeed(File input, double speed) async {
+    final out = await _outPath('speed_${_uuid.v4()}');
+    final setpts = (1 / speed).toStringAsFixed(6);
+    String atempo;
+    if (speed >= 0.5 && speed <= 2.0) {
+      atempo = 'atempo=${speed.toStringAsFixed(2)}';
+    } else if (speed < 0.5) {
+      final times = (1 / speed).ceil();
+      atempo = List.filled(times, 'atempo=0.5').join(',');
+    } else {
+      final times = speed.ceil();
+      atempo = List.filled(times, 'atempo=2.0').join(',');
+    }
+
+    final cmd = "-i '${input.path}' -filter_complex \"[0:v]setpts=$setpts*PTS[v];[0:a]$atempo[a]\" -map '[v]' -map '[a]' -c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 128k '$out'";
+    final s = await FFmpegKit.execute(cmd);
+    final rc = await s.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) return out;
+    throw Exception('Speed change failed');
+  }
+}
